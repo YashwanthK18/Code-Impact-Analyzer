@@ -1,0 +1,1 @@
+"""Code Impact Analyzer package."""
