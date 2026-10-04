@@ -10,6 +10,7 @@ class SymbolResolver:
         self.symbols = {}
         self.imports = {}
         self.variables = {}
+        self.parameters = {}
 
     def add_symbol(self, name, symbol_type, file_path):
         """Add a symbol to the symbol table."""
@@ -99,7 +100,7 @@ class SymbolResolver:
         )
 
         return ".".join(module_parts)
-    
+
     def resolve_method(self, file_path, object_name, method_name):
         """Resolve a method call using the object's known type."""
 
@@ -114,24 +115,44 @@ class SymbolResolver:
             object_name
         )
 
-        if not variable_info:
-            return None
+        if variable_info:
+            class_name = variable_info["class"]
 
-        class_name = variable_info["class"]
+            method_symbol = (
+                f"{class_name}.{method_name}"
+            )
 
-        method_symbol = (
-            f"{class_name}.{method_name}"
-        )
+            symbol = self.symbols.get(
+                method_symbol
+            )
 
-        symbol = self.symbols.get(
-            method_symbol
-        )
+            if symbol and symbol["type"] == "method":
+                return method_symbol
 
-        if symbol and symbol["type"] == "method":
-            return method_symbol
+        for function_name, parameters in self.parameters.get(
+            file_path,
+            {}
+        ).items():
+
+            parameter_type = parameters.get(
+                object_name
+            )
+
+            if parameter_type:
+
+                method_symbol = (
+                    f"{parameter_type}.{method_name}"
+                )
+
+                symbol = self.symbols.get(
+                    method_symbol
+                )
+
+                if symbol and symbol["type"] == "method":
+                    return method_symbol
 
         return None
-    
+
     def index_variables(self, file_path):
 
         file_path = Path(file_path)
@@ -307,6 +328,119 @@ class SymbolResolver:
 
         return results
 
+    def index_parameters(self, file_path):
+
+        file_path = Path(file_path)
+
+        source_code = file_path.read_text(
+            encoding="utf-8"
+        )
+
+        tree = ast.parse(source_code)
+
+        module_name = self.get_module_name(
+            file_path
+        )
+
+        file_parameters = {}
+
+        for node in ast.walk(tree):
+
+            if not isinstance(
+                node,
+                (
+                    ast.FunctionDef,
+                    ast.AsyncFunctionDef
+                )
+            ):
+                continue
+
+            function_name = node.name
+
+            parent_class = None
+
+            for parent in ast.walk(tree):
+
+                if not isinstance(
+                    parent,
+                    ast.ClassDef
+                ):
+                    continue
+
+                for child in parent.body:
+
+                    if child is node:
+
+                        parent_class = parent.name
+                        break
+
+                if parent_class:
+                    break
+
+            if parent_class:
+
+                function_symbol = (
+                    f"{module_name}."
+                    f"{parent_class}."
+                    f"{function_name}"
+                )
+
+            else:
+
+                function_symbol = (
+                    f"{module_name}."
+                    f"{function_name}"
+                )
+
+            arguments = node.args.args
+
+            parameter_info = {}
+
+            for argument in arguments:
+
+                if argument.annotation is None:
+                    continue
+
+                if isinstance(
+                    argument.annotation,
+                    ast.Name
+                ):
+
+                    type_name = (
+                        argument.annotation.id
+                    )
+
+                elif isinstance(
+                    argument.annotation,
+                    ast.Attribute
+                ):
+
+                    type_name = (
+                        argument.annotation.attr
+                    )
+
+                else:
+                    continue
+
+                imported_type = self.imports.get(
+                    str(file_path),
+                    {}
+                ).get(type_name)
+
+                if imported_type:
+
+                    parameter_info[
+                        argument.arg
+                    ] = imported_type
+
+            file_parameters[
+                function_symbol
+            ] = parameter_info
+
+        self.parameters[
+            str(file_path)
+        ] = file_parameters
+
 if __name__ == "__main__":
 
     scanner = RepositoryScanner(
@@ -321,6 +455,7 @@ if __name__ == "__main__":
         resolver.index_file(file_path)
         resolver.index_imports(file_path)
         resolver.index_variables(file_path)
+        resolver.index_parameters(file_path)
 
     print("Symbols:")
     print("====================")
@@ -405,3 +540,24 @@ if __name__ == "__main__":
                 f"{call['method']} "
                 f"-> {call['symbol']}"
             )
+
+    print("\nParameters:")
+    print("====================")
+
+    for file_path, functions in resolver.parameters.items():
+
+        print(f"\n{file_path}")
+
+        for function_name, parameters in functions.items():
+
+            if not parameters:
+                continue
+
+            print(f"  {function_name}")
+
+            for parameter_name, parameter_type in parameters.items():
+
+                print(
+                    f"    {parameter_name} "
+                    f"-> {parameter_type}"
+                )

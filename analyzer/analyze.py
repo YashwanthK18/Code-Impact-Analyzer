@@ -36,6 +36,10 @@ class CodeAnalyzer:
                 file_path
             )
 
+            resolver.index_parameters(
+                file_path
+            )
+
         builder = GraphBuilder(
             resolver
         )
@@ -63,7 +67,7 @@ if __name__ == "__main__":
     )
 
     changed_symbol = (
-            "services.payment.PaymentService.process_payment"
+            "models.user.User.get_details"
     )
 
     affected = analyzer.find_impact(

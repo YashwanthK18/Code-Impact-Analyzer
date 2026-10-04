@@ -131,7 +131,7 @@ class GraphBuilder:
                     call["symbol"],
                     "calls"
                 )
-
+            
     def build(self):
 
         self.add_import_dependencies()
@@ -168,6 +168,8 @@ if __name__ == "__main__":
         resolver.index_variables(
             file_path
         )
+
+        resolver.index_parameters(file_path)
 
     builder = GraphBuilder(
         resolver
