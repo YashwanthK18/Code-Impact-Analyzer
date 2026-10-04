@@ -80,8 +80,21 @@ if __name__ == "__main__":
 
     print("\nPotentially affected:")
 
-    for item in affected:
+    for item, information in affected.items():
 
         print(
-            f"  {item}"
+            f"\n  {item}"
         )
+
+        print(
+            f"    Relationship: "
+            f"{information['relation']}"
+        )
+
+        print("    Path:")
+
+        for step in information["path"]:
+
+            print(
+                f"      ↓ {step}"
+            )

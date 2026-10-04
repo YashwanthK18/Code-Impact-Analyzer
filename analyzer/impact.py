@@ -22,16 +22,18 @@ class ImpactAnalyzer:
                 )
 
     def find_impact(self, changed_symbol):
-        """Find symbols that may be affected by a change."""
+        """Find affected symbols and the path to each one."""
 
-        affected = set()
+        affected = {}
         queue = deque()
 
-        queue.append(changed_symbol)
+        queue.append(
+            (changed_symbol, [changed_symbol])
+        )
 
         while queue:
 
-            current = queue.popleft()
+            current, path = queue.popleft()
 
             for dependent, relation in self.reverse_edges.get(
                 current,
@@ -41,8 +43,16 @@ class ImpactAnalyzer:
                 if dependent in affected:
                     continue
 
-                affected.add(dependent)
-                queue.append(dependent)
+                new_path = path + [dependent]
+
+                affected[dependent] = {
+                    "relation": relation,
+                    "path": new_path
+                }
+
+                queue.append(
+                    (dependent, new_path)
+                )
 
         return affected
 
