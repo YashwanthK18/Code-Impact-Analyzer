@@ -63,7 +63,7 @@ if __name__ == "__main__":
     )
 
     changed_symbol = (
-        "services.order.OrderService.create_order"
+            "services.payment.PaymentService.process_payment"
     )
 
     affected = analyzer.find_impact(
