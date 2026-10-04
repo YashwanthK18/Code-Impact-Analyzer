@@ -253,7 +253,8 @@ class SymbolResolver:
                 results.append({
                     "object": object_name,
                     "method": method_name,
-                    "symbol": resolved
+                    "symbol": resolved,
+                    "line":node.lineno
                 })
 
         return results

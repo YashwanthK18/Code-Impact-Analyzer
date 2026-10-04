@@ -8,23 +8,109 @@ class GraphBuilder:
         self.resolver = resolver
         self.graph = DependencyGraph()
 
-    def add_import_dependencies(self):
+    def find_function_for_line(self, tree, line_number):
+        """Find the function or method containing a line."""
 
-        for file_path, imports in self.resolver.imports.items():
+        best_match = None
+        best_start = -1
 
-            source_file = file_path
+        for node in self._walk_functions(tree):
 
-            for local_name, full_name in imports.items():
+            start = node.lineno
+            end = getattr(
+                node,
+                "end_lineno",
+                start
+            )
 
-                self.graph.add_dependency(
-                    source_file,
-                    full_name,
-                    "imports"
-                )
+            if start <= line_number <= end:
+
+                if start > best_start:
+                    best_match = node
+                    best_start = start
+
+        return best_match
+
+    def _walk_functions(self, tree):
+        """Return all functions and methods in a tree."""
+
+        import ast
+
+        functions = []
+
+        for node in ast.walk(tree):
+
+            if isinstance(
+                node,
+                (ast.FunctionDef, ast.AsyncFunctionDef)
+            ):
+                functions.append(node)
+
+        return functions
+
+    def get_symbol_name(self, file_path, node):
+        """Convert an AST function into its symbol name."""
+
+        module_name = self.resolver.get_module_name(
+            file_path
+        )
+
+        import ast
+
+        parent_class = None
+
+        source_code = file_path.read_text(
+            encoding="utf-8"
+        )
+
+        tree = ast.parse(source_code)
+
+        for possible_class in ast.walk(tree):
+
+            if not isinstance(
+                possible_class,
+                ast.ClassDef
+            ):
+                continue
+
+            for child in possible_class.body:
+
+                if child is node:
+
+                    parent_class = possible_class.name
+
+                    break
+
+            if parent_class:
+                break
+
+        if parent_class:
+
+            return (
+                f"{module_name}."
+                f"{parent_class}."
+                f"{node.name}"
+            )
+
+        return (
+            f"{module_name}."
+            f"{node.name}"
+        )
 
     def add_method_dependencies(self):
 
+        import ast
+        from pathlib import Path
+
         for file_path in self.resolver.imports:
+
+            file_path = Path(file_path)
+
+            source_code = file_path.read_text(
+                encoding="utf-8"
+            )
+
+            tree = ast.parse(source_code)
 
             method_calls = (
                 self.resolver.find_method_calls(
@@ -34,12 +120,45 @@ class GraphBuilder:
 
             for call in method_calls:
 
-                method_symbol = call["symbol"]
+                line_number = call["line"]
+
+                function_node = (
+                    self.find_function_for_line(
+                        tree,
+                        line_number
+                    )
+                )
+
+                if function_node is None:
+                    continue
+
+                source_symbol = (
+                    self.get_symbol_name(
+                        file_path,
+                        function_node
+                    )
+                )
 
                 self.graph.add_dependency(
-                    file_path,
-                    method_symbol,
+                    source_symbol,
+                    call["symbol"],
                     "calls"
+                )
+
+    def add_import_dependencies(self):
+
+        for file_path, imports in (
+            self.resolver.imports.items()
+        ):
+
+            for local_name, full_name in (
+                imports.items()
+            ):
+
+                self.graph.add_dependency(
+                    str(file_path),
+                    full_name,
+                    "imports"
                 )
 
     def build(self):
