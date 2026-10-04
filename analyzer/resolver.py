@@ -8,7 +8,8 @@ class SymbolResolver:
 
     def __init__(self):
         self.symbols = {}
-
+        self.imports = {}
+        
     def add_symbol(self, name, symbol_type, file_path):
         """Add a symbol to the symbol table."""
 
@@ -98,6 +99,46 @@ class SymbolResolver:
 
         return ".".join(module_parts)
     
+    def index_imports(self, file_path):
+        """Extract imported names from a Python file."""
+
+        file_path = Path(file_path)
+
+        source_code = file_path.read_text(
+            encoding="utf-8"
+        )
+
+        tree = ast.parse(source_code)
+
+        file_imports = {}
+
+        for node in tree.body:
+
+            if isinstance(node, ast.ImportFrom):
+
+                module = node.module or ""
+
+                for alias in node.names:
+
+                    local_name = alias.asname or alias.name
+
+                    full_name = (
+                        f"{module}.{alias.name}"
+                    )
+
+                    file_imports[local_name] = full_name
+
+            elif isinstance(node, ast.Import):
+
+                for alias in node.names:
+
+                    local_name = alias.asname or alias.name
+
+                    file_imports[local_name] = alias.name
+
+        self.imports[str(file_path)] = file_imports
+
+
 if __name__ == "__main__":
 
     scanner = RepositoryScanner(
@@ -110,6 +151,7 @@ if __name__ == "__main__":
 
     for file_path in files:
         resolver.index_file(file_path)
+        resolver.index_imports(file_path)
 
     print("Symbols:")
     print("====================")
@@ -121,3 +163,16 @@ if __name__ == "__main__":
             f"--[{information['type']}]--> "
             f"{information['file']}"
         )
+    
+    print("\nImports:")
+    print("====================")
+
+    for file_path, imports in resolver.imports.items():
+
+        print(f"\n{file_path}")
+
+        for local_name, full_name in imports.items():
+
+            print(
+                f"  {local_name} -> {full_name}"
+            )
