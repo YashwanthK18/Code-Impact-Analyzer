@@ -100,6 +100,34 @@ class SymbolResolver:
 
         return ".".join(module_parts)
     
+    def resolve_method(self, file_path, object_name, method_name):
+        """Resolve a method call using the object's known type."""
+
+        file_path = str(file_path)
+
+        variables = self.variables.get(
+            file_path,
+            {}
+        )
+
+        class_name = variables.get(object_name)
+
+        if not class_name:
+            return None
+
+        method_symbol = (
+            f"{class_name}.{method_name}"
+        )
+
+        symbol = self.symbols.get(
+            method_symbol
+        )
+
+        if symbol and symbol["type"] == "method":
+            return method_symbol
+
+        return None
+    
     def index_variables(self, file_path):
         """Track variables created from known classes."""
 
@@ -227,14 +255,41 @@ if __name__ == "__main__":
             )
     
     print("\nVariables:")
-print("====================")
+    print("====================")
 
-for file_path, variables in resolver.variables.items():
+    for file_path, variables in resolver.variables.items():
 
-    print(f"\n{file_path}")
+        print(f"\n{file_path}")
 
     for variable_name, symbol_name in variables.items():
 
         print(
             f"  {variable_name} -> {symbol_name}"
         )
+
+    print("\nMethod Calls:")
+    print("====================")
+
+    for file_path, imports in resolver.imports.items():
+
+        file_path_str = str(file_path)
+
+        print(f"\n{file_path_str}")
+
+        for local_name, full_name in imports.items():
+
+            if "service" not in local_name:
+                continue
+
+            method_symbol = resolver.resolve_method(
+                file_path,
+                local_name,
+                "process_payment"
+            )
+
+            if method_symbol:
+
+                print(
+                    f"  {local_name}.process_payment "
+                    f"--> {method_symbol}"
+                )
