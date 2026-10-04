@@ -110,10 +110,14 @@ class SymbolResolver:
             {}
         )
 
-        class_name = variables.get(object_name)
+        variable_info = variables.get(
+            object_name
+        )
 
-        if not class_name:
+        if not variable_info:
             return None
+
+        class_name = variable_info["class"]
 
         method_symbol = (
             f"{class_name}.{method_name}"
@@ -129,7 +133,6 @@ class SymbolResolver:
         return None
     
     def index_variables(self, file_path):
-        """Track variables created from known classes."""
 
         file_path = Path(file_path)
 
@@ -139,6 +142,10 @@ class SymbolResolver:
 
         tree = ast.parse(source_code)
 
+        module_name = self.get_module_name(
+            file_path
+        )
+
         file_variables = {}
 
         for node in ast.walk(tree):
@@ -146,32 +153,49 @@ class SymbolResolver:
             if not isinstance(node, ast.Assign):
                 continue
 
-            if not isinstance(node.value, ast.Call):
+            value = node.value
+
+            if not isinstance(value, ast.Call):
                 continue
 
-            if not isinstance(node.value.func, ast.Name):
+            if not isinstance(value.func, ast.Name):
                 continue
 
-            variable_name = None
-
-            if len(node.targets) == 1:
-                target = node.targets[0]
-
-                if isinstance(target, ast.Name):
-                    variable_name = target.id
-
-            if variable_name is None:
-                continue
-
-            class_name = node.value.func.id
+            class_name = value.func.id
 
             imported_name = self.imports.get(
                 str(file_path),
                 {}
             ).get(class_name)
 
-            if imported_name:
-                file_variables[variable_name] = imported_name
+            if imported_name is None:
+                continue
+
+            for target in node.targets:
+
+                if isinstance(target, ast.Name):
+
+                    file_variables[target.id] = {
+                        "type": "object",
+                        "class": imported_name
+                    }
+
+                elif isinstance(target, ast.Attribute):
+
+                    if isinstance(
+                        target.value,
+                        ast.Name
+                    ):
+
+                        object_name = (
+                            f"{target.value.id}."
+                            f"{target.attr}"
+                        )
+
+                        file_variables[object_name] = {
+                            "type": "object",
+                            "class": imported_name
+                        }
 
         self.variables[str(file_path)] = file_variables
 
@@ -213,7 +237,7 @@ class SymbolResolver:
                     file_imports[local_name] = alias.name
 
         self.imports[str(file_path)] = file_imports
-    
+   
     def find_method_calls(self, file_path):
         """Find and resolve object.method() calls."""
 
@@ -237,10 +261,33 @@ class SymbolResolver:
 
             object_node = node.func.value
 
-            if not isinstance(object_node, ast.Name):
+            object_name = None
+
+            if isinstance(
+                object_node,
+                ast.Name
+            ):
+
+                object_name = object_node.id
+
+            elif isinstance(
+                object_node,
+                ast.Attribute
+            ):
+
+                if isinstance(
+                    object_node.value,
+                    ast.Name
+                ):
+
+                    object_name = (
+                        f"{object_node.value.id}."
+                        f"{object_node.attr}"
+                    )
+
+            if object_name is None:
                 continue
 
-            object_name = object_node.id
             method_name = node.func.attr
 
             resolved = self.resolve_method(
@@ -250,15 +297,15 @@ class SymbolResolver:
             )
 
             if resolved:
+
                 results.append({
                     "object": object_name,
                     "method": method_name,
                     "symbol": resolved,
-                    "line":node.lineno
+                    "line": node.lineno
                 })
 
         return results
-
 
 if __name__ == "__main__":
 
@@ -306,11 +353,12 @@ if __name__ == "__main__":
 
         print(f"\n{file_path}")
 
-    for variable_name, symbol_name in variables.items():
+        for variable_name, information in variables.items():
 
-        print(
-            f"  {variable_name} -> {symbol_name}"
-        )
+            print(
+                f"  {variable_name} "
+                f"-> {information['class']}"
+            )
 
     print("\nMethod Calls:")
     print("====================")
@@ -342,13 +390,18 @@ if __name__ == "__main__":
     print("\nResolved Method Calls:")
     print("====================")
 
-    method_calls = resolver.find_method_calls(
-        "examples/sample_project/app.py"
-    )
+    for file_path in files:
 
-    for call in method_calls:
-
-        print(
-            f"{call['object']}.{call['method']} "
-            f"-> {call['symbol']}"
+        method_calls = resolver.find_method_calls(
+            file_path
         )
+
+        print(f"\n{file_path}")
+
+        for call in method_calls:
+
+            print(
+                f"  {call['object']}."
+                f"{call['method']} "
+                f"-> {call['symbol']}"
+            )
