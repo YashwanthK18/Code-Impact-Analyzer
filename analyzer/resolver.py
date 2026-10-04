@@ -9,7 +9,8 @@ class SymbolResolver:
     def __init__(self):
         self.symbols = {}
         self.imports = {}
-        
+        self.variables = {}
+
     def add_symbol(self, name, symbol_type, file_path):
         """Add a symbol to the symbol table."""
 
@@ -99,6 +100,53 @@ class SymbolResolver:
 
         return ".".join(module_parts)
     
+    def index_variables(self, file_path):
+        """Track variables created from known classes."""
+
+        file_path = Path(file_path)
+
+        source_code = file_path.read_text(
+            encoding="utf-8"
+        )
+
+        tree = ast.parse(source_code)
+
+        file_variables = {}
+
+        for node in ast.walk(tree):
+
+            if not isinstance(node, ast.Assign):
+                continue
+
+            if not isinstance(node.value, ast.Call):
+                continue
+
+            if not isinstance(node.value.func, ast.Name):
+                continue
+
+            variable_name = None
+
+            if len(node.targets) == 1:
+                target = node.targets[0]
+
+                if isinstance(target, ast.Name):
+                    variable_name = target.id
+
+            if variable_name is None:
+                continue
+
+            class_name = node.value.func.id
+
+            imported_name = self.imports.get(
+                str(file_path),
+                {}
+            ).get(class_name)
+
+            if imported_name:
+                file_variables[variable_name] = imported_name
+
+        self.variables[str(file_path)] = file_variables
+
     def index_imports(self, file_path):
         """Extract imported names from a Python file."""
 
@@ -152,6 +200,7 @@ if __name__ == "__main__":
     for file_path in files:
         resolver.index_file(file_path)
         resolver.index_imports(file_path)
+        resolver.index_variables(file_path)
 
     print("Symbols:")
     print("====================")
@@ -176,3 +225,16 @@ if __name__ == "__main__":
             print(
                 f"  {local_name} -> {full_name}"
             )
+    
+    print("\nVariables:")
+print("====================")
+
+for file_path, variables in resolver.variables.items():
+
+    print(f"\n{file_path}")
+
+    for variable_name, symbol_name in variables.items():
+
+        print(
+            f"  {variable_name} -> {symbol_name}"
+        )
