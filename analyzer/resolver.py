@@ -213,6 +213,50 @@ class SymbolResolver:
                     file_imports[local_name] = alias.name
 
         self.imports[str(file_path)] = file_imports
+    
+    def find_method_calls(self, file_path):
+        """Find and resolve object.method() calls."""
+
+        file_path = Path(file_path)
+
+        source_code = file_path.read_text(
+            encoding="utf-8"
+        )
+
+        tree = ast.parse(source_code)
+
+        results = []
+
+        for node in ast.walk(tree):
+
+            if not isinstance(node, ast.Call):
+                continue
+
+            if not isinstance(node.func, ast.Attribute):
+                continue
+
+            object_node = node.func.value
+
+            if not isinstance(object_node, ast.Name):
+                continue
+
+            object_name = object_node.id
+            method_name = node.func.attr
+
+            resolved = self.resolve_method(
+                file_path,
+                object_name,
+                method_name
+            )
+
+            if resolved:
+                results.append({
+                    "object": object_name,
+                    "method": method_name,
+                    "symbol": resolved
+                })
+
+        return results
 
 
 if __name__ == "__main__":
@@ -293,3 +337,17 @@ if __name__ == "__main__":
                     f"  {local_name}.process_payment "
                     f"--> {method_symbol}"
                 )
+    
+    print("\nResolved Method Calls:")
+    print("====================")
+
+    method_calls = resolver.find_method_calls(
+        "examples/sample_project/app.py"
+    )
+
+    for call in method_calls:
+
+        print(
+            f"{call['object']}.{call['method']} "
+            f"-> {call['symbol']}"
+        )
