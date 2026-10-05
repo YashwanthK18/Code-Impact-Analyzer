@@ -1,21 +1,22 @@
 import ast
 from pathlib import Path
 
+from analyzer.resolver import SymbolResolver
+
 
 class ChangeDetector:
+    """Detects changed symbols between two versions of a file."""
 
     def __init__(self, resolver):
         self.resolver = resolver
 
-    def find_symbols(self, file_path):
+    def extract_symbols(
+        self,
+        tree,
+        file_path
+    ):
 
         file_path = Path(file_path)
-
-        source_code = file_path.read_text(
-            encoding="utf-8"
-        )
-
-        tree = ast.parse(source_code)
 
         module_name = self.resolver.get_module_name(
             file_path
@@ -25,7 +26,10 @@ class ChangeDetector:
 
         for node in tree.body:
 
-            if isinstance(node, ast.FunctionDef):
+            if isinstance(
+                node,
+                ast.FunctionDef
+            ):
 
                 symbol_name = (
                     f"{module_name}.{node.name}"
@@ -36,16 +40,10 @@ class ChangeDetector:
                     include_attributes=False
                 )
 
-            elif isinstance(node, ast.ClassDef):
-
-                class_name = (
-                    f"{module_name}.{node.name}"
-                )
-
-                symbols[class_name] = ast.dump(
-                    node,
-                    include_attributes=False
-                )
+            elif isinstance(
+                node,
+                ast.ClassDef
+            ):
 
                 for child in node.body:
 
@@ -67,6 +65,23 @@ class ChangeDetector:
 
         return symbols
 
+    def find_symbols(self, file_path):
+
+        file_path = Path(file_path)
+
+        source_code = file_path.read_text(
+            encoding="utf-8"
+        )
+
+        tree = ast.parse(
+            source_code
+        )
+
+        return self.extract_symbols(
+            tree,
+            file_path
+        )
+
     def compare_files(
         self,
         old_file,
@@ -83,10 +98,59 @@ class ChangeDetector:
 
         changed = []
 
-        all_symbols = set(
-            old_symbols
-        ) | set(
-            new_symbols
+        all_symbols = (
+            set(old_symbols) |
+            set(new_symbols)
+        )
+
+        for symbol in all_symbols:
+
+            old_code = old_symbols.get(
+                symbol
+            )
+
+            new_code = new_symbols.get(
+                symbol
+            )
+
+            if old_code != new_code:
+
+                changed.append(
+                    symbol
+                )
+
+        return changed
+
+    def compare_source(
+        self,
+        old_source,
+        new_source,
+        file_path
+    ):
+
+        old_tree = ast.parse(
+            old_source
+        )
+
+        new_tree = ast.parse(
+            new_source
+        )
+
+        old_symbols = self.extract_symbols(
+            old_tree,
+            file_path
+        )
+
+        new_symbols = self.extract_symbols(
+            new_tree,
+            file_path
+        )
+
+        changed = []
+
+        all_symbols = (
+            set(old_symbols) |
+            set(new_symbols)
         )
 
         for symbol in all_symbols:
@@ -110,39 +174,57 @@ class ChangeDetector:
 
 if __name__ == "__main__":
 
-    from analyzer.scanner import RepositoryScanner
-    from analyzer.resolver import SymbolResolver
-
-    scanner = RepositoryScanner(
-        "examples/sample_project"
+    from analyzer.git_provider import (
+        GitChangeProvider
     )
 
-    files = scanner.scan()
+    provider = GitChangeProvider(
+        "."
+    )
 
     resolver = SymbolResolver()
-
-    for file_path in files:
-
-        resolver.index_file(
-            file_path
-        )
-
-        resolver.index_imports(
-            file_path
-        )
 
     detector = ChangeDetector(
         resolver
     )
 
-    changed = detector.compare_files(
-        "examples/sample_project/versions/old_user.py",
-        "examples/sample_project/versions/new_user.py"
-    )
+    changed_files = provider.get_changed_files()
 
-    print("Changed Symbols")
+    print("Git Change Detection")
     print("====================")
 
-    for symbol in changed:
+    for file_path in changed_files:
 
-        print(symbol)
+        print(
+            f"\nFile: {file_path}"
+        )
+
+        try:
+
+            old_source = provider.get_old_file(
+                file_path
+            )
+
+            new_source = provider.get_current_file(
+                file_path
+            )
+
+            changed_symbols = (
+                detector.compare_source(
+                    old_source,
+                    new_source,
+                    file_path
+                )
+            )
+
+            for symbol in changed_symbols:
+
+                print(
+                    f"  Changed: {symbol}"
+                )
+
+        except Exception as error:
+
+            print(
+                f"  Error: {error}"
+            )

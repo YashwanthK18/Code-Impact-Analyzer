@@ -7,7 +7,7 @@ def run_app():
     user = User(user_id=1, name="Alice", email="alice@example.com")
     order_service = OrderService()
     order = order_service.create_order(user, item_name="Laptop", price=1200.0)
-    print(f"Order created successfully: {order}")
+    print(f"Order completed successfully: {order}")
 
 
 if __name__ == "__main__":

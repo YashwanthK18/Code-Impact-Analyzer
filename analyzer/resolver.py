@@ -90,25 +90,37 @@ class SymbolResolver:
                         }
 
     def get_module_name(self, file_path):
-        """Convert a Python file path into a module name."""
 
         file_path = Path(file_path)
 
-        relative_path = file_path.relative_to(
-            Path("examples/sample_project")
+        sample_root = Path(
+            "examples/sample_project"
         )
 
-        module_parts = list(relative_path.parts)
+        try:
 
-        module_parts[-1] = module_parts[
-            -1
-        ].replace(
+            relative_path = file_path.relative_to(
+                sample_root
+            )
+
+        except ValueError:
+
+            relative_path = file_path
+
+        module_parts = list(
+            relative_path.parts
+        )
+
+        if not module_parts:
+            return ""
+
+        module_parts[-1] = module_parts[-1].replace(
             ".py",
             ""
         )
 
         return ".".join(module_parts)
-
+    
     def resolve_method(
         self,
         file_path,

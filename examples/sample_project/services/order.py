@@ -16,7 +16,7 @@ class OrderService:
             "user": user.get_details(),
             "item": item_name,
             "price": price,
-            "status": "confirmed",
+            "status": "completed",
         }
         self.orders.append(order)
         return order

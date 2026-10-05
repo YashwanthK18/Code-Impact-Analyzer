@@ -2,6 +2,8 @@ from analyzer.scanner import RepositoryScanner
 from analyzer.resolver import SymbolResolver
 from analyzer.graph_builder import GraphBuilder
 from analyzer.impact import ImpactAnalyzer
+from analyzer.change_detector import ChangeDetector
+from analyzer.git_provider import GitChangeProvider
 
 
 class CodeAnalyzer:
@@ -9,7 +11,6 @@ class CodeAnalyzer:
 
     def __init__(self, repository_path):
         self.repository_path = repository_path
-        self.resolver = None
 
     def build(self):
 
@@ -20,7 +21,6 @@ class CodeAnalyzer:
         files = scanner.scan()
 
         resolver = SymbolResolver()
-        self.resolver = resolver
 
         for file_path in files:
 
@@ -38,30 +38,103 @@ class CodeAnalyzer:
                 file_path
             )
 
-            resolver.index_parameters(
-                file_path
-            )
-
         builder = GraphBuilder(
             resolver
         )
 
         graph = builder.build()
 
-        return graph
+        return graph, resolver
+
+    def find_changed_symbols(self):
+
+        provider = GitChangeProvider(
+            "."
+        )
+
+        changed_files = (
+            provider.get_changed_files()
+        )
+
+        resolver = SymbolResolver()
+
+        scanner = RepositoryScanner(
+            self.repository_path
+        )
+
+        files = scanner.scan()
+
+        for file_path in files:
+
+            resolver.index_file(
+                file_path
+            )
+
+        detector = ChangeDetector(
+            resolver
+        )
+
+        changed_symbols = []
+
+        for file_path in changed_files:
+
+            if not file_path.startswith(
+                self.repository_path.replace(
+                    "\\",
+                    "/"
+                )
+            ):
+
+                if self.repository_path not in file_path:
+
+                    continue
+
+            try:
+
+                old_source = (
+                    provider.get_old_file(
+                        file_path
+                    )
+                )
+
+                new_source = (
+                    provider.get_current_file(
+                        file_path
+                    )
+                )
+
+                symbols = detector.compare_source(
+                    old_source,
+                    new_source,
+                    file_path
+                )
+
+                changed_symbols.extend(
+                    symbols
+                )
+
+            except Exception as error:
+
+                print(
+                    f"Could not analyze "
+                    f"{file_path}: {error}"
+                )
+
+        return changed_symbols
 
     def find_impact(self, symbol):
 
-        graph = self.build()
+        graph, resolver = self.build()
 
         analyzer = ImpactAnalyzer(
             graph,
-            self.resolver.symbols
+            resolver.symbols
         )
 
         return analyzer.find_impact(
             symbol
         )
+
 
 if __name__ == "__main__":
 
@@ -69,61 +142,82 @@ if __name__ == "__main__":
         "examples/sample_project"
     )
 
-    changed_symbol = (
-            "models.user.User.get_details"
-    )
-
-    affected = analyzer.find_impact(
-        changed_symbol
+    changed_symbols = (
+        analyzer.find_changed_symbols()
     )
 
     print("Code Impact Analysis")
     print("====================")
 
-    print(
-        f"\nChanged symbol:\n"
-        f"  {changed_symbol}"
-    )
+    print("\nChanged Symbols:")
 
-    print("\nPotentially affected:")
-
-    for item, information in affected.items():
+    for symbol in changed_symbols:
 
         print(
-            f"\n  {item}"
+            f"  {symbol}"
         )
 
-        if information["file"]:
-            print(
-                f"    File: "
-                f"{information['file']}"
-            )
-
-        if information["line"]:
-            print(
-                f"    Line: "
-                f"{information['line']}"
-            )
+    if not changed_symbols:
 
         print(
-            f"    Relationship: "
-            f"{information['relation']}"
+            "  No changed symbols found."
         )
 
-        print("    Path:")
+    for changed_symbol in changed_symbols:
 
-        for step in information["path"]:
+        affected = analyzer.find_impact(
+            changed_symbol
+        )
+
+        print(
+            f"\nImpact of: "
+            f"{changed_symbol}"
+        )
+
+        if not affected:
 
             print(
-                f"      ↓ {step}"
+                "  No potentially affected "
+                "symbols found."
             )
 
-        print(
-            f"    Impact: "
-            f"{information['impact']}"
-        )
+            continue
 
         print(
-            f"    Distance: "
-            f"{information['distance']}"
+            "\nPotentially affected:"
         )
+
+        for item, information in affected.items():
+
+            print(
+                f"\n  {item}"
+            )
+
+            if "file" in information:
+
+                print(
+                    f"    File: "
+                    f"{information['file']}"
+                )
+
+            if "line" in information:
+
+                print(
+                    f"    Line: "
+                    f"{information['line']}"
+                )
+
+            print(
+                f"    Relationship: "
+                f"{information['relation']}"
+            )
+
+            print(
+                "    Path:"
+            )
+
+            for step in information["path"]:
+
+                print(
+                    f"      ↓ {step}"
+                )
