@@ -9,6 +9,7 @@ class CodeAnalyzer:
 
     def __init__(self, repository_path):
         self.repository_path = repository_path
+        self.resolver = None
 
     def build(self):
 
@@ -19,6 +20,7 @@ class CodeAnalyzer:
         files = scanner.scan()
 
         resolver = SymbolResolver()
+        self.resolver = resolver
 
         for file_path in files:
 
@@ -53,7 +55,8 @@ class CodeAnalyzer:
         graph = self.build()
 
         analyzer = ImpactAnalyzer(
-            graph
+            graph,
+            self.resolver.symbols
         )
 
         return analyzer.find_impact(
@@ -90,6 +93,18 @@ if __name__ == "__main__":
             f"\n  {item}"
         )
 
+        if information["file"]:
+            print(
+                f"    File: "
+                f"{information['file']}"
+            )
+
+        if information["line"]:
+            print(
+                f"    Line: "
+                f"{information['line']}"
+            )
+
         print(
             f"    Relationship: "
             f"{information['relation']}"
@@ -102,3 +117,13 @@ if __name__ == "__main__":
             print(
                 f"      ↓ {step}"
             )
+
+        print(
+            f"    Impact: "
+            f"{information['impact']}"
+        )
+
+        print(
+            f"    Distance: "
+            f"{information['distance']}"
+        )

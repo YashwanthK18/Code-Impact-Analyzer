@@ -4,8 +4,9 @@ from collections import defaultdict, deque
 class ImpactAnalyzer:
     """Finds code that may be affected by a change."""
 
-    def __init__(self, graph):
+    def __init__(self, graph, symbols=None):
         self.graph = graph
+        self.symbols = symbols or {}
         self.reverse_edges = defaultdict(set)
 
         self._build_reverse_graph()
@@ -22,7 +23,6 @@ class ImpactAnalyzer:
                 )
 
     def find_impact(self, changed_symbol):
-        """Find affected symbols and the path to each one."""
 
         affected = {}
         queue = deque()
@@ -45,9 +45,25 @@ class ImpactAnalyzer:
 
                 new_path = path + [dependent]
 
+                symbol_info = self.symbols.get(
+                    dependent,
+                    {}
+                )
+
+                distance = len(new_path) - 1
+
+                if distance == 1:
+                    impact_level = "direct"
+                else:
+                    impact_level = "indirect"
+
                 affected[dependent] = {
                     "relation": relation,
-                    "path": new_path
+                    "path": new_path,
+                    "file": symbol_info.get("file"),
+                    "line": symbol_info.get("line"),
+                    "distance": distance,
+                    "impact": impact_level
                 }
 
                 queue.append(
@@ -74,8 +90,24 @@ if __name__ == "__main__":
         "calls"
     )
 
+    symbols = {
+        "app.run_app": {
+            "file": "examples/sample_project/app.py",
+            "line": 5
+        },
+        "services.order.OrderService": {
+            "file": "examples/sample_project/services/order.py",
+            "line": 5
+        },
+        "services.order.OrderService.create_order": {
+            "file": "examples/sample_project/services/order.py",
+            "line": 10
+        }
+    }
+
     analyzer = ImpactAnalyzer(
-        graph
+        graph,
+        symbols
     )
 
     affected = analyzer.find_impact(
@@ -85,5 +117,12 @@ if __name__ == "__main__":
     print("Impact Analysis")
     print("====================")
 
-    for item in affected:
+    for item, information in affected.items():
+
         print(item)
+        print(
+            f"  File: {information['file']}"
+        )
+        print(
+            f"  Line: {information['line']}"
+        )
