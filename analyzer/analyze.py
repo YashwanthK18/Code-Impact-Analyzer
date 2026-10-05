@@ -11,8 +11,14 @@ from analyzer.git_provider import GitChangeProvider
 class CodeAnalyzer:
     """Runs the complete code impact analysis pipeline."""
 
-    def __init__(self, repository_path):
-        self.repository_path = repository_path
+    def __init__(
+        self,
+        repository_path
+    ):
+
+        self.repository_path = str(
+            Path(repository_path).resolve()
+        )
 
     def build(self):
 
@@ -22,7 +28,9 @@ class CodeAnalyzer:
 
         files = scanner.scan()
 
-        resolver = SymbolResolver()
+        resolver = SymbolResolver(
+            self.repository_path
+        )
 
         for file_path in files:
 
@@ -40,10 +48,6 @@ class CodeAnalyzer:
                 file_path
             )
 
-            resolver.index_parameters(
-                file_path
-            )
-
         builder = GraphBuilder(
             resolver
         )
@@ -55,12 +59,16 @@ class CodeAnalyzer:
     def find_changed_symbols(self):
 
         provider = GitChangeProvider(
-            "."
+            self.repository_path
         )
 
-        changed_files = provider.get_changed_files()
+        changed_files = (
+            provider.get_changed_files()
+        )
 
-        resolver = SymbolResolver()
+        resolver = SymbolResolver(
+            self.repository_path
+        )
 
         scanner = RepositoryScanner(
             self.repository_path
@@ -131,9 +139,108 @@ class CodeAnalyzer:
                     f"{file_path}: {error}"
                 )
 
-        return changed_symbols
+        return sorted(
+            set(changed_symbols)
+        )
 
-    def find_impact(self, symbol):
+    def find_changed_symbols_between(
+        self,
+        old_commit,
+        new_commit
+    ):
+
+        provider = GitChangeProvider(
+            self.repository_path
+        )
+
+        changed_files = provider.get_changed_files(
+            old_commit,
+            new_commit
+        )
+
+        resolver = SymbolResolver(
+            self.repository_path
+        )
+
+        scanner = RepositoryScanner(
+            self.repository_path
+        )
+
+        files = scanner.scan()
+
+        for file_path in files:
+
+            resolver.index_file(
+                file_path
+            )
+
+        detector = ChangeDetector(
+            resolver
+        )
+
+        changed_symbols = []
+
+        repository_path = Path(
+            self.repository_path
+        ).resolve()
+
+        for file_path in changed_files:
+
+            changed_path = Path(
+                file_path
+            ).resolve()
+
+            try:
+
+                changed_path.relative_to(
+                    repository_path
+                )
+
+            except ValueError:
+
+                continue
+
+            if changed_path.suffix != ".py":
+
+                continue
+
+            try:
+
+                old_source = provider.get_file_at_commit(
+                    file_path,
+                    old_commit
+                )
+
+                new_source = provider.get_file_at_commit(
+                    file_path,
+                    new_commit
+                )
+
+                symbols = detector.compare_source(
+                    old_source,
+                    new_source,
+                    file_path
+                )
+
+                changed_symbols.extend(
+                    symbols
+                )
+
+            except Exception as error:
+
+                print(
+                    f"Could not analyze "
+                    f"{file_path}: {error}"
+                )
+
+        return sorted(
+            set(changed_symbols)
+        )
+
+    def find_impact(
+        self,
+        symbol
+    ):
 
         graph, resolver = self.build()
 
@@ -146,67 +253,34 @@ class CodeAnalyzer:
             symbol
         )
 
+    def calculate_overall_risk(
+        self,
+        affected
+    ):
 
-if __name__ == "__main__":
+        high_count = 0
+        medium_count = 0
+        low_count = 0
 
-    analyzer = CodeAnalyzer(
-        "examples/sample_project"
-    )
+        affected_files = set()
 
-    changed_symbols = analyzer.find_changed_symbols()
+        for information in affected.values():
 
-    print("Code Impact Analysis")
-    print("====================")
-
-    print("\nChanged Symbols:")
-
-    if changed_symbols:
-
-        for symbol in changed_symbols:
-
-            print(
-                f"  {symbol}"
+            risk = information.get(
+                "risk"
             )
 
-    else:
+            if risk == "HIGH":
 
-        print(
-            "  No changed symbols found."
-        )
+                high_count += 1
 
-    all_affected = {}
+            elif risk == "MEDIUM":
 
-    for changed_symbol in changed_symbols:
+                medium_count += 1
 
-        affected = analyzer.find_impact(
-            changed_symbol
-        )
+            elif risk == "LOW":
 
-        print(
-            f"\nImpact of: "
-            f"{changed_symbol}"
-        )
-
-        if not affected:
-
-            print(
-                "  No potentially affected "
-                "symbols found."
-            )
-
-            continue
-
-        print(
-            "\nPotentially affected:"
-        )
-
-        for item, information in affected.items():
-
-            all_affected[item] = information
-
-            print(
-                f"\n  {item}"
-            )
+                low_count += 1
 
             file_path = information.get(
                 "file"
@@ -214,146 +288,35 @@ if __name__ == "__main__":
 
             if file_path:
 
-                print(
-                    f"    File: {file_path}"
+                affected_files.add(
+                    file_path
                 )
 
-            line_number = information.get(
-                "line"
-            )
+        if high_count > 0:
 
-            if line_number:
+            overall_risk = "HIGH"
 
-                print(
-                    f"    Line: {line_number}"
-                )
+        elif medium_count > 0:
 
-            relationship = information.get(
-                "relation",
-                "unknown"
-            )
+            overall_risk = "MEDIUM"
 
-            print(
-                f"    Relationship: "
-                f"{relationship}"
-            )
+        elif low_count > 0:
 
-            impact = information.get(
-                "impact",
-                "UNKNOWN"
-            )
+            overall_risk = "LOW"
 
-            print(
-                f"    Impact: {impact}"
-            )
+        else:
 
-            impact_type = information.get(
-                "impact_type"
-            )
+            overall_risk = "NONE"
 
-            if impact_type:
-
-                print(
-                    f"    Impact Type: "
-                    f"{impact_type}"
-                )
-
-            print(
-                "    Path:"
-            )
-
-            path = information.get(
-                "path",
-                []
-            )
-
-            for step in path:
-
-                print(
-                    f"      ↓ {step}"
-                )
-
-    high_count = 0
-    medium_count = 0
-    low_count = 0
-
-    affected_files = set()
-
-    for information in all_affected.values():
-
-        impact = information.get(
-            "impact"
-        )
-
-        if impact == "HIGH":
-
-            high_count += 1
-
-        elif impact == "MEDIUM":
-
-            medium_count += 1
-
-        elif impact == "LOW":
-
-            low_count += 1
-
-        file_path = information.get(
-            "file"
-        )
-
-        if file_path:
-
-            affected_files.add(
-                file_path
-            )
-
-    if high_count > 0:
-
-        overall_risk = "HIGH"
-
-    elif medium_count > 0:
-
-        overall_risk = "MEDIUM"
-
-    elif low_count > 0:
-
-        overall_risk = "LOW"
-
-    else:
-
-        overall_risk = "NONE"
-
-    print("\n")
-    print("Overall Risk")
-    print("====================")
-
-    print(
-        f"Risk Level: {overall_risk}"
-    )
-
-    print(
-        f"Changed Symbols: "
-        f"{len(changed_symbols)}"
-    )
-
-    print(
-        f"Affected Symbols: "
-        f"{len(all_affected)}"
-    )
-
-    print(
-        f"Affected Files: "
-        f"{len(affected_files)}"
-    )
-
-    print(
-        f"HIGH Impact: {high_count}"
-    )
-
-    print(
-        f"MEDIUM Impact: {medium_count}"
-    )
-
-    print(
-        f"LOW Impact: {low_count}"
-    )
+        return {
+            "risk": overall_risk,
+            "affected_symbols": len(
+                affected
+            ),
+            "affected_files": len(
+                affected_files
+            ),
+            "high": high_count,
+            "medium": medium_count,
+            "low": low_count
+        }

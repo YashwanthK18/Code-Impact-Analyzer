@@ -3,19 +3,20 @@ import subprocess
 
 
 class GitChangeProvider:
-    """Gets changed Python files and their Git versions."""
+    """Provides Git file changes and file contents."""
 
     def __init__(self, repository_path):
-        self.repository_path = Path(repository_path)
+        self.repository_path = Path(
+            repository_path
+        ).resolve()
 
-    def get_changed_files(self):
+    def get_repository_root(self):
 
         result = subprocess.run(
             [
                 "git",
-                "diff",
-                "--name-only",
-                "HEAD"
+                "rev-parse",
+                "--show-toplevel"
             ],
             cwd=self.repository_path,
             capture_output=True,
@@ -23,26 +24,128 @@ class GitChangeProvider:
             check=True
         )
 
+        return Path(
+            result.stdout.strip()
+        ).resolve()
+
+    def _git_root(self):
+
+        return self.get_repository_root()
+
+    def _relative_git_path(self, file_path):
+
+        file_path = Path(
+            file_path
+        ).resolve()
+
+        root = self.get_repository_root()
+
+        return file_path.relative_to(
+            root
+        )
+
+    def get_changed_files(
+        self,
+        from_commit="HEAD",
+        to_commit=None
+    ):
+
+        if to_commit is None:
+
+            command = [
+                "git",
+                "diff",
+                "--name-only",
+                from_commit
+            ]
+
+        else:
+
+            command = [
+                "git",
+                "diff",
+                "--name-only",
+                from_commit,
+                to_commit
+            ]
+
+        result = subprocess.run(
+            command,
+            cwd=self.repository_path,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        root = self.get_repository_root()
         files = []
 
         for line in result.stdout.splitlines():
 
-            file_path = line.strip()
+            relative_path = Path(
+                line.strip()
+            )
 
-            if file_path.endswith(".py"):
-                files.append(file_path)
+            if not str(relative_path):
+                continue
+
+            full_path = (
+                root / relative_path
+            ).resolve()
+
+            try:
+
+                full_path.relative_to(
+                    self.repository_path
+                )
+
+            except ValueError:
+
+                continue
+
+            if full_path.suffix != ".py":
+                continue
+
+            files.append(
+                str(full_path)
+            )
 
         return files
 
-    def get_old_file(self, file_path):
+    def get_changed_files_between(
+        self,
+        from_commit,
+        to_commit
+    ):
+
+        return self.get_changed_files(
+            from_commit,
+            to_commit
+        )
+
+    def get_file_at_commit(
+        self,
+        file_path,
+        commit
+    ):
+
+        file_path = Path(
+            file_path
+        ).resolve()
+
+        root = self.get_repository_root()
+
+        relative_path = file_path.relative_to(
+            root
+        )
 
         result = subprocess.run(
             [
                 "git",
                 "show",
-                f"HEAD:{file_path}"
+                f"{commit}:{relative_path.as_posix()}"
             ],
-            cwd=self.repository_path,
+            cwd=root,
             capture_output=True,
             text=True,
             check=True
@@ -50,14 +153,26 @@ class GitChangeProvider:
 
         return result.stdout
 
-    def get_current_file(self, file_path):
+    def get_old_file(
+        self,
+        file_path
+    ):
 
-        full_path = (
-            self.repository_path /
-            file_path
+        return self.get_file_at_commit(
+            file_path,
+            "HEAD"
         )
 
-        return full_path.read_text(
+    def get_current_file(
+        self,
+        file_path
+    ):
+
+        file_path = Path(
+            file_path
+        ).resolve()
+
+        return file_path.read_text(
             encoding="utf-8"
         )
 
@@ -65,7 +180,7 @@ class GitChangeProvider:
 if __name__ == "__main__":
 
     provider = GitChangeProvider(
-        "."
+        "examples/sample_project"
     )
 
     changed_files = provider.get_changed_files()

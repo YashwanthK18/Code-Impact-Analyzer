@@ -5,16 +5,12 @@ from analyzer.resolver import SymbolResolver
 
 
 class ChangeDetector:
-    """Detects changed symbols between two versions of a file."""
+    """Detects changed functions and methods between two versions."""
 
     def __init__(self, resolver):
         self.resolver = resolver
 
-    def extract_symbols(
-        self,
-        tree,
-        file_path
-    ):
+    def extract_symbols(self, tree, file_path):
 
         file_path = Path(file_path)
 
@@ -28,7 +24,10 @@ class ChangeDetector:
 
             if isinstance(
                 node,
-                ast.FunctionDef
+                (
+                    ast.FunctionDef,
+                    ast.AsyncFunctionDef
+                )
             ):
 
                 symbol_name = (
@@ -49,7 +48,10 @@ class ChangeDetector:
 
                     if isinstance(
                         child,
-                        ast.FunctionDef
+                        (
+                            ast.FunctionDef,
+                            ast.AsyncFunctionDef
+                        )
                     ):
 
                         method_name = (
@@ -69,13 +71,11 @@ class ChangeDetector:
 
         file_path = Path(file_path)
 
-        source_code = file_path.read_text(
+        source = file_path.read_text(
             encoding="utf-8"
         )
 
-        tree = ast.parse(
-            source_code
-        )
+        tree = ast.parse(source)
 
         return self.extract_symbols(
             tree,
@@ -96,30 +96,10 @@ class ChangeDetector:
             new_file
         )
 
-        changed = []
-
-        all_symbols = (
-            set(old_symbols) |
-            set(new_symbols)
+        return self._compare_symbol_sets(
+            old_symbols,
+            new_symbols
         )
-
-        for symbol in all_symbols:
-
-            old_code = old_symbols.get(
-                symbol
-            )
-
-            new_code = new_symbols.get(
-                symbol
-            )
-
-            if old_code != new_code:
-
-                changed.append(
-                    symbol
-                )
-
-        return changed
 
     def compare_source(
         self,
@@ -146,14 +126,25 @@ class ChangeDetector:
             file_path
         )
 
+        return self._compare_symbol_sets(
+            old_symbols,
+            new_symbols
+        )
+
+    def _compare_symbol_sets(
+        self,
+        old_symbols,
+        new_symbols
+    ):
+
         changed = []
 
         all_symbols = (
-            set(old_symbols) |
-            set(new_symbols)
+            set(old_symbols)
+            | set(new_symbols)
         )
 
-        for symbol in all_symbols:
+        for symbol in sorted(all_symbols):
 
             old_code = old_symbols.get(
                 symbol
@@ -209,13 +200,17 @@ if __name__ == "__main__":
                 file_path
             )
 
-            changed_symbols = (
-                detector.compare_source(
-                    old_source,
-                    new_source,
-                    file_path
-                )
+            changed_symbols = detector.compare_source(
+                old_source,
+                new_source,
+                file_path
             )
+
+            if not changed_symbols:
+
+                print(
+                    "  No changed symbols found."
+                )
 
             for symbol in changed_symbols:
 
